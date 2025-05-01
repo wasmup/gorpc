@@ -13,8 +13,8 @@ It automates the creation of `.proto` files from templates and compiles them usi
 ### Prerequisites
 
 - Go 1.16 or later (for `//go:embed` support).
-- Protocol Buffers Compiler (`protoc`) installed and available in your `PATH`.
-[protobuf/releases](https://github.com/protocolbuffers/protobuf/releases/)
+- Protocol Buffers Compiler (`protoc`) installed and available in your `PATH`.  
+[protobuf/releases](https://github.com/protocolbuffers/protobuf/releases/)  
 Example for protoc-30.2-linux-x86_64:
 ```sh
 wget 'https://github.com/protocolbuffers/protobuf/releases/download/v30.2/protoc-30.2-linux-x86_64.zip'
@@ -78,11 +78,15 @@ The `.proto` template is embedded in the binary using Go's `//go:embed` directiv
 
 Example template (event.txt):
 ```proto
-package {{.Name}};
+edition = "2023"; // successor to proto2 and proto3
+// syntax = "proto3";
 
+package {{.Name}};
 option features.(pb.go).api_level = API_OPAQUE;
+// option go_package = ".;{{.Name}}";
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/go_features.proto";
 
 message Event {
   string name = 1;
