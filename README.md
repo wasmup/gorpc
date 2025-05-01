@@ -72,6 +72,11 @@ gorpc
 
 # build `myservice.pb.go`
 gorpc
+
+# output example:
+protoc --go_out=. --go-grpc_out=require_unimplemented_servers=false:. --go_opt=Mmyservice.proto=./myservice --go-grpc_opt=Mmyservice.proto=./myservice --go_opt=paths=source_relative --go-grpc_opt=paths=source_relative myservice.proto
+
+Protobuf "myservice.proto" generated successfully in package "myservice" 
 ```
 
 If no `.proto` files exist, a new file (e.g., `myservice.proto`) will be created based on the template.
