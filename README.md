@@ -66,6 +66,11 @@ If no `.proto` files are found in the directory, a new `.proto` file will be cre
 ```sh
 mkdir myservice
 cd myservice
+
+# generate  `myservice.proto`
+gorpc
+
+# build `myservice.pb.go`
 gorpc
 ```
 
