@@ -1,0 +1,22 @@
+edition = "2023"; // successor to proto2 and proto3
+
+package event;
+option features.(pb.go).api_level = API_OPAQUE;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/go_features.proto";
+
+message Event {
+  string name = 1;
+  string id = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message SendEventResponse {
+  string status = 1; // e.g. "OK" or error message
+}
+
+service EventService {
+  // Unary RPC to send an event
+  rpc SendEvent(Event) returns (SendEventResponse);
+}
