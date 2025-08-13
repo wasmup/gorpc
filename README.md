@@ -35,19 +35,23 @@ protoc --version
 ```sh
 go install -x -ldflags=-s google.golang.org/protobuf/cmd/protoc-gen-go@latest
 protoc-gen-go --version
+go version -m $(which protoc-gen-go)
 
 go install -x -ldflags=-s google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 protoc-gen-go-grpc --version
+go version -m $(which protoc-gen-go-grpc)
+
 ```
 
 ## Installation
 ```sh
 git clone git@github.com:wasmup/gorpc.git
 cd gorpc
-CGO_ENABLED=0 GOOS=linux GOAMD64=v3 go install -x -ldflags "-s -w -linkmode internal" -trimpath=true 
+CGO_ENABLED=0 go install -x -ldflags "-s -w -linkmode internal" -trimpath=true 
 which gorpc
 file $(which gorpc)
 ls -lh $(which gorpc)
+go version -m $(which gorpc)
 ```
 
 ## Usage
