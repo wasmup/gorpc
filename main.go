@@ -13,11 +13,25 @@ import (
 
 	_ "embed"
 	_ "time/tzdata"
+
+	"github.com/klauspost/cpuid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{AddSource: true, Level: slog.LevelInfo})))
-	slog.Info(`Go`, `Version`, runtime.Version(), `OS`, runtime.GOOS, `ARCH`, runtime.GOARCH, `now`, time.Now(), `Local`, time.Local)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		AddSource: true,
+		Level:     slog.LevelInfo,
+	})))
+
+	slog.Info(`starting gorpc`,
+		`Version`, runtime.Version(),
+		`OS`, runtime.GOOS,
+		`ARCH`, runtime.GOARCH,
+		`GOAMD64`, GOAMD64(),
+		// `Cardinality`, Cardinality(),
+		`now`, time.Now(),
+		`Local`, time.Local)
 
 	dirs := os.Args[1:]
 	if len(dirs) == 0 {
@@ -129,4 +143,35 @@ func CreateNewProroFileFrom(content, filename string) {
 	}
 
 	slog.Info("Proto file created successfully", "File", filename+".proto")
+}
+
+func GOAMD64() string {
+	level := `v1`
+	if cpuid.CPU.Supports(cpuid.SSE3, cpuid.SSSE3, cpuid.SSE4, cpuid.SSE42, cpuid.POPCNT, cpuid.LAHF) {
+		level = `v2`
+	}
+	if cpuid.CPU.Supports(cpuid.AVX, cpuid.AVX2, cpuid.BMI1, cpuid.BMI2, cpuid.FMA3, cpuid.LZCNT, cpuid.MOVBE, cpuid.F16C) {
+		level = `v3`
+	}
+	if cpuid.CPU.Supports(cpuid.AVX512F, cpuid.AVX512BW, cpuid.AVX512CD, cpuid.AVX512DQ, cpuid.AVX512VL) {
+		level = `v4`
+	}
+	return level
+}
+
+func Cardinality() (total int) {
+	var start = time.Now()
+
+	metricFamilies, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		slog.Error(`metricsCardinality failed`, `d`, time.Since(start), `error`, err)
+		return
+	}
+
+	for _, mf := range metricFamilies {
+		cardinality := len(mf.GetMetric())
+		total += cardinality
+	}
+
+	return
 }
