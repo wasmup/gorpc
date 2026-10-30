@@ -18,6 +18,38 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+/*
+generate new folder and just output go code into new folder:
+protoc --go_out=. --go-grpc_out=. echo.proto
+
+If you only need protobuf marshaling/unmarshaling (no gRPC), then:
+protoc --go_out=. echo.proto
+
+Generates:
+
+text
+echo.pb.go
+This includes:
+
+Message structs
+Enums
+Reflection metadata
+Marshal / Unmarshal support
+Size calculation
+Proto cloning, comparison, etc.
+
+You don’t need --go-grpc_out if:
+
+You’re sending protobuf over:
+raw TCP
+HTTP
+Kafka
+NATS
+files
+shared memory
+You’re storing protobuf on disk
+You’re using protobuf as an internal binary format
+*/
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		AddSource: true,
@@ -160,7 +192,7 @@ func GOAMD64() string {
 }
 
 func Cardinality() (total int) {
-	var start = time.Now()
+	start := time.Now()
 
 	metricFamilies, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
