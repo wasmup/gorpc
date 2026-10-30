@@ -1,15 +1,16 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"text/template"
 	"time"
+	"unicode"
 
 	_ "embed"
 	_ "time/tzdata"
@@ -51,92 +52,88 @@ You’re storing protobuf on disk
 You’re using protobuf as an internal binary format
 */
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		AddSource: true,
-		Level:     slog.LevelInfo,
-	})))
-
-	slog.Info(`starting gorpc`,
-		`Version`, runtime.Version(),
-		`OS`, runtime.GOOS,
-		`ARCH`, runtime.GOARCH,
-		`GOAMD64`, GOAMD64(),
-		// `Cardinality`, Cardinality(),
-		`now`, time.Now(),
-		`Local`, time.Local)
-
-	dirs := os.Args[1:]
-	if len(dirs) == 0 {
-		cwd, err := os.Getwd()
-		if err != nil {
-			slog.Error(`Getwd`, `Err`, err)
-			return
-		}
-		dirs = []string{cwd}
-	}
-
-	for _, dir := range dirs {
-		if err := os.Chdir(dir); err != nil {
-			slog.Error(`msg`, `Err`, err)
-			return
-		}
-		name := filepath.Base(dir)
-		if name == "" {
-			continue
-		}
-
-		protoFiles, err := GetProtoFilesInCurrentDir(dir)
-		if err != nil {
-			slog.Error(`msg`, `Err`, err)
-			continue
-		}
-
-		if len(protoFiles) == 0 {
-			CreateNewProroFileFrom(proto, name)
-			return
-		}
-
-		for _, file := range protoFiles {
-			// Build protoc command arguments
-			args := []string{
-				"--go_out=.",
-				"--go-grpc_out=require_unimplemented_servers=false:.",
-				fmt.Sprintf("--go_opt=M%s=./%s", file, name),
-				fmt.Sprintf("--go-grpc_opt=M%s=./%s", file, name),
-				"--go_opt=paths=source_relative",
-				"--go-grpc_opt=paths=source_relative",
-				file,
-			}
-
-			fmt.Println("\nprotoc", strings.Join(args, " "))
-
-			// Create command
-			cmd := exec.Command("protoc", args...)
-			cmd.Stdin = os.Stdin
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-
-			// Execute command
-			if err := cmd.Run(); err != nil {
-				slog.Error(`protoc execution failed`, `Err`, err)
-				continue
-			}
-
-			fmt.Printf("\nProtobuf %q generated successfully in package %q \n", file, name)
-		}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{AddSource: true, Level: slog.LevelInfo})))
+	if err := run(os.Args[1:]); err != nil {
+		slog.Error("generation failed", "error", err)
+		os.Exit(1)
 	}
 }
 
+// run generates Go files for each directory, or creates a starter schema in an empty directory.
+func run(dirs []string) error {
+	if len(dirs) == 0 {
+		dirs = []string{"."}
+	}
+	var failures []error
+	for _, dir := range dirs {
+		root, err := filepath.Abs(dir)
+		if err != nil {
+			failures = append(failures, err)
+			continue
+		}
+		name := protoName(filepath.Base(root))
+		files, err := GetProtoFilesInCurrentDir(root)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", dir, err))
+			continue
+		}
+		if len(files) == 0 {
+			if err := createProtoFile(proto, root, name); err != nil {
+				failures = append(failures, err)
+			}
+			continue
+		}
+		for _, file := range files {
+			args := []string{
+				"--go_out=.", "--go-grpc_out=require_unimplemented_servers=false:.",
+				fmt.Sprintf("--go_opt=M%s=./%s", file, name),
+				fmt.Sprintf("--go-grpc_opt=M%s=./%s", file, name),
+				"--go_opt=paths=source_relative", "--go-grpc_opt=paths=source_relative", file,
+			}
+			fmt.Println("protoc", strings.Join(args, " "))
+			cmd := exec.Command("protoc", args...)
+			cmd.Dir = root
+			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+			if err := cmd.Run(); err != nil {
+				failures = append(failures, fmt.Errorf("%s: protoc: %w", filepath.Join(root, file), err))
+			}
+		}
+	}
+	return errors.Join(failures...)
+}
+
+// protoName converts a directory name into a valid protobuf identifier.
+func protoName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	result := b.String()
+	if result == "" {
+		return "event"
+	}
+	if unicode.IsDigit(rune(result[0])) {
+		return "_" + result
+	}
+	return result
+}
+
+// GetProtoFilesInCurrentDir returns paths relative to root, including nested schemas.
 func GetProtoFilesInCurrentDir(root string) (protoFiles []string, err error) {
 	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if filepath.Ext(path) == ".proto" {
-			name := filepath.Base(path)
-			if name != "" {
-				protoFiles = append(protoFiles, name)
+		if !info.IsDir() && filepath.Ext(path) == ".proto" {
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
 			}
+			protoFiles = append(protoFiles, filepath.ToSlash(rel))
 		}
 		return nil
 	})
@@ -146,35 +143,25 @@ func GetProtoFilesInCurrentDir(root string) (protoFiles []string, err error) {
 //go:embed event.txt
 var proto string
 
-// This function is used to create a new file with the given name and write the content to it.
-// It uses the text/template package to parse the content and execute it with the provided name.
-// The resulting file will be named <name>.proto and will be created in the current working directory.
-func CreateNewProroFileFrom(content, filename string) {
-	// Create a new template and parse the content
+func createProtoFile(content, root, name string) error {
 	t, err := template.New("proto").Parse(content)
 	if err != nil {
-		slog.Error("ParseTemplate", "Err", err)
-		return
+		return fmt.Errorf("parse template: %w", err)
 	}
-
-	// Create the output file
-	file, err := os.Create(filename + ".proto")
+	path := filepath.Join(root, name+".proto")
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
-		slog.Error("Create", "Err", err)
-		return
+		return fmt.Errorf("create %s: %w", path, err)
 	}
-	defer file.Close()
-
-	// Execute the template with the provided name
-	data := map[string]string{
-		"Name": filename,
+	if err := t.Execute(file, map[string]string{"Name": name}); err != nil {
+		file.Close()
+		return fmt.Errorf("write %s: %w", path, err)
 	}
-	if err := t.Execute(file, data); err != nil {
-		slog.Error("ExecuteTemplate", "Err", err)
-		return
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", path, err)
 	}
-
-	slog.Info("Proto file created successfully", "File", filename+".proto")
+	slog.Info("Proto file created successfully", "file", path)
+	return nil
 }
 
 func GOAMD64() string {

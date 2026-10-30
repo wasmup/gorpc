@@ -1,4 +1,4 @@
-module gorpc
+module github.com/wasmup/gorpc
 
 go 1.27.3
 
